@@ -7,7 +7,10 @@ import pygame
 import sys
 import random
 import math
+import copy
+from queue import Queue
 
+Q = Queue()
 TEMP = 10.0
 COOLING_RATE = 0.95
 
@@ -41,6 +44,19 @@ def get_valid_neighbors(cell, grid : "Grid"):
 
     return valid_n
 
+def check_if_block_is_wind(block,grid : "Grid"):
+    checking_neighbor = [block[0],block[1]]
+    if grid.has_wind(block[0],block[1]):
+        diretion = grid.get_wind_direction(block[0],block[1])
+        if diretion == 'right' and checking_neighbor[1] < 12 : checking_neighbor[1] += 1
+        elif diretion == 'left' and checking_neighbor[1] > 0 : checking_neighbor[1] -=1
+        elif diretion == 'up' and checking_neighbor[0] > 0 : checking_neighbor[0] -= 1
+        elif diretion == 'down' and checking_neighbor[0] < 10: checking_neighbor[0] += 1
+
+        if grid.is_obstacle(checking_neighbor[0],checking_neighbor[1]) : return False
+
+    return checking_neighbor
+
 def hill_climbing(current, dest, grid : "Grid"):
     """
     Hill Climbing - Always move to the neighbor that gets closest to destination
@@ -53,21 +69,12 @@ def hill_climbing(current, dest, grid : "Grid"):
     main_neighbor = current
 
     for neighbor in neighbors:
-        checking_neighbor = [neighbor[0],neighbor[1]]
-        if grid.has_wind(next[0],next[1]):
-            diretion = grid.get_wind_direction(next[0],next[1])
-            if diretion == 'right' and checking_neighbor[1] < 12 : checking_neighbor[1] += 1
-            elif diretion == 'left' and checking_neighbor[1] > 0 : checking_neighbor[1] -=1
-            elif diretion == 'up' and checking_neighbor[0] > 0 : checking_neighbor[0] -= 1
-            elif diretion == 'down' and checking_neighbor[0] < 10: checking_neighbor[0] += 1
-
-            if grid.is_obstacle(checking_neighbor[0],checking_neighbor[1]) : checking_neighbor = [next[0],next[1]]
-        
-
-        dist = distance(checking_neighbor,dest)
-        if dist < best_cost :
-            best_cost = dist
-            main_neighbor = neighbor
+        checking_neighbor = check_if_block_is_wind(neighbor,grid)
+        if checking_neighbor :
+            dist = distance(checking_neighbor,dest)
+            if dist < best_cost :
+                best_cost = dist
+                main_neighbor = neighbor
 
     return main_neighbor
 
@@ -84,38 +91,31 @@ def simulated_annealing(current, dest, grid : "Grid"):
     neighbors : list = get_valid_neighbors(current,grid)
     current_cost = distance(current,dest)
     main_node = current
-    
-    if TEMP == 0 : return main_node
 
-    next = random.choice(neighbors)
+    while len(neighbors) > 0:
+        next = random.choice(neighbors)
+        checking_neighbor = check_if_block_is_wind(next,grid)
+        if checking_neighbor:
+            next_cost = distance(checking_neighbor,dest)
 
-    checking_neighbor = [next[0],next[1]]
-    if grid.has_wind(next[0],next[1]):
-        diretion = grid.get_wind_direction(next[0],next[1])
-        if diretion == 'right' and checking_neighbor[1] < 12 : checking_neighbor[1] += 1
-        elif diretion == 'left' and checking_neighbor[1] > 0 : checking_neighbor[1] -=1
-        elif diretion == 'up' and checking_neighbor[0] > 0 : checking_neighbor[0] -= 1
-        elif diretion == 'down' and checking_neighbor[0] < 10: checking_neighbor[0] += 1
-
-        if grid.is_obstacle(checking_neighbor[0],checking_neighbor[1]) : checking_neighbor = [next[0],next[1]]
-            
-
-        
-    next_cost = distance(checking_neighbor,dest)
-
-    if next_cost < current_cost :
-        main_node = next
-    else :
-        r = random.randint(0,100) / 100
-        e = - (next_cost - current_cost) / (TEMP)
-        p = math.exp(e)
-        if p >= r :
-            main_node = next
-
+            if next_cost < current_cost :
+                main_node = next
+                break
+            else :
+                r = random.randint(0,100) / 100
+                e = - (next_cost - current_cost) / (TEMP)
+                p = math.exp(e)
+                if p >= r :
+                    main_node = next
+                    break
+                else :
+                    neighbors.remove(next)
+                
     TEMP *= COOLING_RATE
     return main_node
 
 def genetic_algorithm(current, dest, grid):
+    global Q
     """
     Genetic Algorithm - Generate population of moves, evolve, select best
     Hint: Create population from neighbors, evolve over generations
@@ -124,8 +124,111 @@ def genetic_algorithm(current, dest, grid):
     population_size = 8
     generations = 3
     #todo
+    if len(list(Q.queue)) == 0:
+        path = dict()
+        path_dest = []
 
+        for item in range(1,population_size+1):
+            parent = set()
+            now_place = current
+            path[item] = []
+            for _ in range(3):
+                neighbors : list = get_valid_neighbors(now_place,grid)
+                random_way = random.choice(neighbors)
+                for _ in range(3):
+                    if random_way not in parent:
+                        break
+                    random_way = random.choice(neighbors)
 
+                if random_way[0] - 1  == now_place[0]:
+                    path[item].append('UP')
+                elif random_way[0] + 1  == now_place[0]:
+                    path[item].append('DOWN')
+                elif random_way[1] - 1  == now_place[1]:
+                    path[item].append('RIGHT')
+                elif random_way[1] + 1  == now_place[1]:
+                    path[item].append('LEFT')
+                parent.add(now_place)
+                now_place = random_way
+            d = distance(now_place, dest)
+            path_dest.append(1 / (d + 1e-6))
+
+        for _ in range(generations):
+            new_path = {}
+            for item in range(population_size):
+                paths = random.choices(list(path.keys()),weights =path_dest,k=2)
+                r = random.randint(0,2)
+                n_path : list = path[paths[0]][:r]
+                n_path.extend(path[paths[1]][r:])
+                attempt = 0
+                while not is_valid(current,n_path,grid) and attempt < 10 :
+                    paths = random.choices(list(path.keys()),weights =path_dest,k=2)
+                    r =random.randint(0,2)
+                    n_path : list = path[paths[0]][:r]
+                    n_path.extend(path[paths[1]][r:])
+                    attempt += 1 
+                new_path[item] = n_path
+
+            path = copy.deepcopy(new_path)
+            for p in path:
+                r1 = random.random()
+                if r1 > 0.85 :
+                    r = random.randint(0,2)
+                    mutating_path = copy.deepcopy(path[p])
+                    mutating_path[r] = random.choice(['UP','RIGHT','LEFT','DOWN'])
+                    if is_valid(current,mutating_path,grid):
+                        path[p] = copy.deepcopy(mutating_path)
+            for num, moves in path.items():
+                end_cell = get_place(current, moves)
+                d = distance(end_cell, dest)
+                path_dest[num] = 1 / (d + 1e-6)
+            
+        choosen = random.choices(list(path.values()), weights=path_dest, k=1)[0]
+        for item in choosen:
+            Q.put(item)
+
+    print(list(Q.queue))
+    cell = get_next_place(current,Q.get())
+    return tuple(cell)
+        
+
+def is_valid(current, path, grid: "Grid"):
+    cell = get_place(current, path)
+    if 0 < cell[0] < 10 and 0 < cell[1] < 12 and not grid.is_obstacle(cell[0], cell[1]):
+        return True
+    return False
+
+def cehck_distance(current,dest,path : list):
+    cell = get_place(current,path)
+    return distance(cell,dest)
+    
+def get_place(current, path: list):
+    cell = [current[0], current[1]]
+    for move in path:
+        if move == 'UP' and cell[0] > 0:
+            cell[0] -= 1
+        elif move == 'DOWN' and cell[0] < 9:
+            cell[0] += 1
+        elif move == 'RIGHT' and cell[1] < 11:
+            cell[1] += 1
+        elif move == 'LEFT' and cell[1] > 0:
+            cell[1] -= 1
+    return cell
+
+def get_next_place(current, move):
+    cell = [current[0], current[1]]
+    if move == 'UP' and cell[0] > 0:
+        cell[0] -= 1
+    elif move == 'DOWN' and cell[0] < 9:
+        cell[0] += 1
+    elif move == 'RIGHT' and cell[1] < 11:
+        cell[1] += 1
+    elif move == 'LEFT' and cell[1] > 0:
+        cell[1] -= 1
+        
+    return cell
+    
+    
 def cell_center(r, c):
     return (MARGIN + c * CELL_SIZE + CELL_SIZE / 2, MARGIN + r * CELL_SIZE + CELL_SIZE / 2)
 
