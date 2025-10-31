@@ -207,7 +207,7 @@ class GomokuAI:
           - Keep track of the best move found at the top depth.
         """
         if depth == 0 or self.checkResult() != None:
-            return alpha , beta ,board_value
+            return board_value
         
         best_moves = list(self.childNodes(bound))
         # best_moves = best_moves[:len(best_moves) - 20]
@@ -219,20 +219,18 @@ class GomokuAI:
             self.boardMap[new_i][new_j] = maximizingPlayer
             new_bound = bound.copy()
             self.updateBound(new_i,new_j,new_bound)
-            alpha, beta , v = self.alphaBetaPruning(depth-1,now_board_value,new_bound,alpha,beta,maximizingPlayer * -1 )
+            v = self.alphaBetaPruning(depth-1,now_board_value,new_bound,alpha,beta,maximizingPlayer * -1 )
             if maximizingPlayer == -1 :
                 if v < alpha :
                     self.boardMap[new_i][new_j] = 0
-                    print(f"v : {v},alpha : {alpha}")
-                    return alpha , beta , v
-                alpha = max(v,alpha)
+                    return v
+                beta = min(v,beta)
 
             if maximizingPlayer == 1:
                 if v > beta :
                     self.boardMap[new_i][new_j] = 0
-                    print(f"v : {v},beta : {beta}")
-                    return alpha , beta , v
-                beta = min(v,beta)
+                    return v
+                alpha = max(v,alpha)
 
             values.append(v)
             self.boardMap[new_i][new_j] = 0
@@ -246,8 +244,7 @@ class GomokuAI:
             best_value = min(values)
             
         if depth == self.depth :
-            print(f"best_value_place:{best_value_place}")
             self.currentI , self.currentJ = best_value_place
             return 
 
-        return alpha , beta , best_value
+        return best_value
